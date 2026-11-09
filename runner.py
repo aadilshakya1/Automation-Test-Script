@@ -21,6 +21,7 @@ from playwright.sync_api import sync_playwright
 from config import BASE_URL, DEFAULT_TIMEOUT, SCREENSHOTS_DIR
 from pages.login_page import LoginPage
 from pages.clinical_page import ClinicalPage
+from pages.navigation_page import NavigationPage
 
 
 class TestRunner:
@@ -664,6 +665,350 @@ class TestRunner:
             )
             return False
 
+    def _ensure_auth(self, page, username: str = None, password: str = None) -> bool:
+        """Helper to ensure user is logged in for navigation tests."""
+        from config import TEST_USERNAME, TEST_PASSWORD
+        user = username or TEST_USERNAME
+        pwd = password or TEST_PASSWORD
+        if not user or not pwd:
+            return False
+        login_page = LoginPage(page, self.base_url)
+        login_page.navigate()
+        if login_page.is_login_page_displayed():
+            login_page.login(user, pwd)
+        nav = NavigationPage(page, self.base_url)
+        nav.dismiss_modal_if_present()
+        return True
+
+    def run_nav_task1(self, page, username: str = None, password: str = None) -> bool:
+        """
+        Pages and Navigation Task 1: Landing page buttons (page "/")
+        - Click 'Launch Platform'. The URL should end in /clinical.
+        - Click 'Start Learning'. The URL should end in /education.
+        """
+        start = time.time()
+        if not self._ensure_auth(page, username, password):
+            self._record_test(
+                name="nav_task1",
+                status="SKIPPED",
+                duration_ms=0,
+                details={"reason": "No credentials provided. Pass via --username/--password or set PGX_USERNAME/PGX_PASSWORD."}
+            )
+            return True
+
+        nav = NavigationPage(page, self.base_url)
+        try:
+            # 1. Test 'Launch Platform'
+            page.goto(self.base_url, wait_until="networkidle", timeout=self.timeout)
+            nav.dismiss_modal_if_present()
+
+            launch_btn = nav.get_launch_platform_btn()
+            if launch_btn.count() == 0 or not launch_btn.first.is_visible():
+                raise AssertionError("'Launch Platform' button is not visible on landing page!")
+            launch_btn.first.click()
+            page.wait_for_load_state("networkidle", timeout=self.timeout)
+
+            if not page.url.rstrip("/").endswith("/clinical"):
+                raise AssertionError(f"Expected URL to end in /clinical after 'Launch Platform', got: {page.url}")
+
+            # 2. Test 'Start Learning'
+            page.goto(self.base_url, wait_until="networkidle", timeout=self.timeout)
+            nav.dismiss_modal_if_present()
+
+            start_learning_btn = nav.get_start_learning_btn()
+            if start_learning_btn.count() == 0 or not start_learning_btn.first.is_visible():
+                raise AssertionError("'Start Learning' button is not visible on landing page!")
+            start_learning_btn.first.click()
+            page.wait_for_load_state("networkidle", timeout=self.timeout)
+
+            if not page.url.rstrip("/").endswith("/education"):
+                raise AssertionError(f"Expected URL to end in /education after 'Start Learning', got: {page.url}")
+
+            self._record_test(
+                name="nav_task1",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details={"launch_platform_target": "/clinical", "start_learning_target": "/education"}
+            )
+            return True
+        except Exception as e:
+            shot = self._capture_failure(page, "nav_task1")
+            self._record_test(
+                name="nav_task1",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+                screenshot=shot
+            )
+            return False
+
+    def run_nav_task2(self, page, username: str = None, password: str = None) -> bool:
+        """
+        Pages and Navigation Task 2: Landing page on phone view (390 x 844)
+        - At first only 'Launch Platform' is visible. 'Start Learning' is hidden.
+        - Click the 'Education' tab. 'Start Learning' shows and 'Launch Platform' hides.
+        - Click the 'Clinical' tab. 'Launch Platform' shows again.
+        """
+        start = time.time()
+        if not self._ensure_auth(page, username, password):
+            self._record_test(
+                name="nav_task2",
+                status="SKIPPED",
+                duration_ms=0,
+                details={"reason": "No credentials provided. Pass via --username/--password or set PGX_USERNAME/PGX_PASSWORD."}
+            )
+            return True
+
+        nav = NavigationPage(page, self.base_url)
+        try:
+            page.set_viewport_size({"width": 390, "height": 844})
+            page.goto(self.base_url, wait_until="networkidle", timeout=self.timeout)
+            nav.dismiss_modal_if_present()
+
+            launch_btn = nav.get_launch_platform_btn()
+            start_learning_btn = nav.get_start_learning_btn()
+
+            # Initial view
+            if launch_btn.count() == 0 or not launch_btn.first.is_visible():
+                raise AssertionError("On phone view initial load, 'Launch Platform' should be visible!")
+            if start_learning_btn.count() > 0 and start_learning_btn.first.is_visible():
+                raise AssertionError("On phone view initial load, 'Start Learning' should be hidden!")
+
+            # Switch to Education tab
+            nav.click_education_tab()
+            if start_learning_btn.count() == 0 or not start_learning_btn.first.is_visible():
+                raise AssertionError("After clicking 'Education' tab, 'Start Learning' should be visible!")
+            if launch_btn.count() > 0 and launch_btn.first.is_visible():
+                raise AssertionError("After clicking 'Education' tab, 'Launch Platform' should be hidden!")
+
+            # Switch back to Clinical tab
+            nav.click_clinical_tab()
+            if launch_btn.count() == 0 or not launch_btn.first.is_visible():
+                raise AssertionError("After clicking 'Clinical' tab, 'Launch Platform' should show again!")
+
+            page.set_viewport_size({"width": 1280, "height": 720})
+
+            self._record_test(
+                name="nav_task2",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details={"viewport": "390x844", "tab_switching_verified": True}
+            )
+            return True
+        except Exception as e:
+            page.set_viewport_size({"width": 1280, "height": 720})
+            shot = self._capture_failure(page, "nav_task2")
+            self._record_test(
+                name="nav_task2",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+                screenshot=shot
+            )
+            return False
+
+    def run_nav_task3(self, page, username: str = None, password: str = None) -> bool:
+        """
+        Pages and Navigation Task 3: Education cards (page "/education")
+        - Click 'Take Quiz'. The URL should end in /quiz.
+        - Click 'Drug Monograph', 'Lectures' and 'Patient Case Simulation' one at a time. The URL should stay /education.
+        """
+        start = time.time()
+        if not self._ensure_auth(page, username, password):
+            self._record_test(
+                name="nav_task3",
+                status="SKIPPED",
+                duration_ms=0,
+                details={"reason": "No credentials provided. Pass via --username/--password or set PGX_USERNAME/PGX_PASSWORD."}
+            )
+            return True
+
+        nav = NavigationPage(page, self.base_url)
+        edu_url = f"{self.base_url.rstrip('/')}/education"
+        try:
+            page.goto(edu_url, wait_until="networkidle", timeout=self.timeout)
+            nav.dismiss_modal_if_present()
+
+            # 1. Click 'Take Quiz'
+            nav.click_take_quiz()
+            if not page.url.rstrip("/").endswith("/quiz"):
+                raise AssertionError(f"Expected URL to end in /quiz after 'Take Quiz', got: {page.url}")
+
+            # Return to /education
+            page.goto(edu_url, wait_until="networkidle", timeout=self.timeout)
+
+            # 2. Click 'Drug Monograph', 'Lectures' and 'Patient Case Simulation'
+            for card_name in ["Drug Monograph", "Lectures", "Patient Case Simulation"]:
+                nav.click_education_card(card_name)
+                if not page.url.rstrip("/").endswith("/education"):
+                    raise AssertionError(f"After clicking '{card_name}', URL should stay /education, got: {page.url}")
+
+            self._record_test(
+                name="nav_task3",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details={"quiz_navigation": "/quiz", "static_cards_verified": ["Drug Monograph", "Lectures", "Patient Case Simulation"]}
+            )
+            return True
+        except Exception as e:
+            shot = self._capture_failure(page, "nav_task3")
+            self._record_test(
+                name="nav_task3",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+                screenshot=shot
+            )
+            return False
+
+    def run_nav_task4(self, page, username: str = None, password: str = None) -> bool:
+        """
+        Pages and Navigation Task 4: Floating mode switch
+        - On /clinical, click 'Switch to education mode'. The URL should end in /education.
+        - Click 'Switch to clinical mode'. The URL should be back to /clinical.
+        - The button must not appear on '/', '/terms-of-use' or '/shared_chat'.
+        """
+        start = time.time()
+        if not self._ensure_auth(page, username, password):
+            self._record_test(
+                name="nav_task4",
+                status="SKIPPED",
+                duration_ms=0,
+                details={"reason": "No credentials provided. Pass via --username/--password or set PGX_USERNAME/PGX_PASSWORD."}
+            )
+            return True
+
+        nav = NavigationPage(page, self.base_url)
+        clinical_url = f"{self.base_url.rstrip('/')}/clinical"
+        try:
+            page.goto(clinical_url, wait_until="networkidle", timeout=self.timeout)
+            nav.dismiss_modal_if_present()
+
+            # Switch to education mode
+            nav.click_switch_to_education_mode()
+            if not page.url.rstrip("/").endswith("/education"):
+                raise AssertionError(f"Expected URL to end in /education after mode switch, got: {page.url}")
+
+            # Switch back to clinical mode
+            nav.click_switch_to_clinical_mode()
+            if not page.url.rstrip("/").endswith("/clinical"):
+                raise AssertionError(f"Expected URL to end in /clinical after mode switch, got: {page.url}")
+
+            # Verify button does NOT appear on '/', '/terms-of-use', or '/shared_chat'
+            disallowed_pages = [
+                f"{self.base_url.rstrip('/')}/",
+                f"{self.base_url.rstrip('/')}/terms-of-use",
+                f"{self.base_url.rstrip('/')}/shared_chat"
+            ]
+            for check_url in disallowed_pages:
+                page.goto(check_url, wait_until="networkidle", timeout=self.timeout)
+                nav.dismiss_modal_if_present()
+                btn = nav.get_floating_mode_switch_btn()
+                if btn.count() > 0 and btn.first.is_visible():
+                    raise AssertionError(f"Floating mode switch unexpectedly appeared on: {check_url}")
+
+            self._record_test(
+                name="nav_task4",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details={"mode_switch_cycle": "clinical -> education -> clinical", "disallowed_pages_checked": 3}
+            )
+            return True
+        except Exception as e:
+            shot = self._capture_failure(page, "nav_task4")
+            self._record_test(
+                name="nav_task4",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+                screenshot=shot
+            )
+            return False
+
+    def run_nav_task5(self, page, username: str = None, password: str = None) -> bool:
+        """
+        Pages and Navigation Task 5: 'Learn more' link
+        - On /clinical, click 'Learn more' in the sidebar. The URL should end in /creator-insight.
+        """
+        start = time.time()
+        if not self._ensure_auth(page, username, password):
+            self._record_test(
+                name="nav_task5",
+                status="SKIPPED",
+                duration_ms=0,
+                details={"reason": "No credentials provided. Pass via --username/--password or set PGX_USERNAME/PGX_PASSWORD."}
+            )
+            return True
+
+        nav = NavigationPage(page, self.base_url)
+        clinical_url = f"{self.base_url.rstrip('/')}/clinical"
+        try:
+            page.goto(clinical_url, wait_until="networkidle", timeout=self.timeout)
+            nav.dismiss_modal_if_present()
+
+            target_page = nav.click_learn_more()
+            final_url = target_page.url
+            if target_page != page:
+                target_page.close()
+
+            if not final_url.rstrip("/").endswith("/creator-insight"):
+                raise AssertionError(f"Expected URL to end in /creator-insight after 'Learn more', got: {final_url}")
+
+            self._record_test(
+                name="nav_task5",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details={"learn_more_target": "/creator-insight"}
+            )
+            return True
+        except Exception as e:
+            shot = self._capture_failure(page, "nav_task5")
+            self._record_test(
+                name="nav_task5",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+                screenshot=shot
+            )
+            return False
+
+    def run_nav_task6(self, page) -> bool:
+        """
+        Pages and Navigation Task 6: Broken share links (public endpoints)
+        - Open /shared_chat with no uId. Expect: 'No session ID found in URL. Please check the shared link.'
+        - Open /shared_chat?uId=ab. Expect: 'Unable to load conversation'
+        """
+        start = time.time()
+        try:
+            # 1. No uId
+            page.goto(f"{self.base_url.rstrip('/')}/shared_chat", wait_until="networkidle", timeout=self.timeout)
+            expected_1 = "No session ID found in URL. Please check the shared link."
+            if not page.get_by_text(expected_1).first.is_visible():
+                raise AssertionError(f"Expected text '{expected_1}' not found on /shared_chat")
+
+            # 2. uId=ab
+            page.goto(f"{self.base_url.rstrip('/')}/shared_chat?uId=ab", wait_until="networkidle", timeout=self.timeout)
+            if not page.get_by_text(re.compile(r"Unable to load conversation", re.I)).first.is_visible():
+                raise AssertionError("Expected 'Unable to load conversation' not found on /shared_chat?uId=ab")
+
+            self._record_test(
+                name="nav_task6",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details={"broken_links_verified": ["/shared_chat", "/shared_chat?uId=ab"]}
+            )
+            return True
+        except Exception as e:
+            shot = self._capture_failure(page, "nav_task6")
+            self._record_test(
+                name="nav_task6",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+                screenshot=shot
+            )
+            return False
+
     def execute(self, scenario: str = "all", username: str = None, password: str = None) -> dict:
         """Executes designated scenarios and generates final summary report."""
         with sync_playwright() as p:
@@ -686,6 +1031,18 @@ class TestRunner:
                 scenarios_to_run.append(lambda pg: self.run_task1_b(pg, username=username, password=password))
             if scenario in ("task2", "all"):
                 scenarios_to_run.append(lambda pg: self.run_task2(pg, username=username, password=password))
+            if scenario in ("nav_task1", "nav_all", "all"):
+                scenarios_to_run.append(lambda pg: self.run_nav_task1(pg, username=username, password=password))
+            if scenario in ("nav_task2", "nav_all", "all"):
+                scenarios_to_run.append(lambda pg: self.run_nav_task2(pg, username=username, password=password))
+            if scenario in ("nav_task3", "nav_all", "all"):
+                scenarios_to_run.append(lambda pg: self.run_nav_task3(pg, username=username, password=password))
+            if scenario in ("nav_task4", "nav_all", "all"):
+                scenarios_to_run.append(lambda pg: self.run_nav_task4(pg, username=username, password=password))
+            if scenario in ("nav_task5", "nav_all", "all"):
+                scenarios_to_run.append(lambda pg: self.run_nav_task5(pg, username=username, password=password))
+            if scenario in ("nav_task6", "nav_all", "all"):
+                scenarios_to_run.append(self.run_nav_task6)
 
             for test_func in scenarios_to_run:
                 test_func(page)
@@ -710,7 +1067,12 @@ def main():
     parser = argparse.ArgumentParser(description="AI-Agent Friendly Playwright Test Runner")
     parser.add_argument(
         "--scenario",
-        choices=["smoke", "invalid_login", "valid_login", "navigation", "task1_a", "task1_b", "task2", "all"],
+        choices=[
+            "smoke", "invalid_login", "valid_login", "navigation",
+            "task1_a", "task1_b", "task2",
+            "nav_task1", "nav_task2", "nav_task3", "nav_task4", "nav_task5", "nav_task6", "nav_all",
+            "all"
+        ],
         default="all",
         help="Test scenario to execute (default: all)"
     )

@@ -28,12 +28,14 @@ Playwright/
 ├── pages/
 │   ├── __init__.py
 │   ├── login_page.py           # Page Object for authentication & platform launching
-│   └── clinical_page.py        # Page Object for /clinical (modes, form inputs, threads, sharing)
+│   ├── clinical_page.py        # Page Object for /clinical (modes, form inputs, threads, sharing)
+│   └── navigation_page.py      # Page Object for Pages & Navigation (landing, phone view, education cards, switch, links)
 └── tests/
     ├── __init__.py
     ├── test_login.py           # Smoke, invalid credentials, and navigation tests
     ├── test_task1.py           # Task 1: Prompt Mode vs Manual Entry (Part A & Part B)
-    └── test_task2.py           # Task 2: Thread isolation, persistence across reload, and sharing
+    ├── test_task2.py           # Task 2: Thread isolation, persistence across reload, and sharing
+    └── test_pages_and_navigation.py # Tasks 1-6: Pages & Navigation suite
 ```
 
 ---
@@ -49,6 +51,13 @@ Playwright/
 | `task1_a` | **Screen Switching**: Switches between Prompt Mode and Manual Entry 5 times; verifies no assessment loaders appear and `apiCalls` remains empty. |
 | `task1_b` | **Data Retention**: Enters Age, Sex, Gene, Phenotype, Medical History, and Medications; switches modes and audits retention across all fields. |
 | `task2` | **Sidebar & Sharing**: Creates Thread A (CYP2C19), starts Thread B (CYP2D6), verifies data isolation, reloads page, and validates generated share link. |
+| `nav_task1` | **Pages & Navigation Task 1**: Landing page buttons ("Launch Platform" -> `/clinical`, "Start Learning" -> `/education`). |
+| `nav_task2` | **Pages & Navigation Task 2**: Landing page responsive phone view (390x844), tab toggle between Clinical and Education. |
+| `nav_task3` | **Pages & Navigation Task 3**: Education cards ("Take Quiz" -> `/quiz`, other cards stay `/education`). |
+| `nav_task4` | **Pages & Navigation Task 4**: Floating mode switch on `/clinical` & `/education`; absence on `/`, `/terms-of-use`, `/shared_chat`. |
+| `nav_task5` | **Pages & Navigation Task 5**: Sidebar "Learn more" link navigating to `/creator-insight`. |
+| `nav_task6` | **Pages & Navigation Task 6**: Broken share links error validation on `/shared_chat` and `/shared_chat?uId=ab`. |
+| `nav_all` | Runs all 6 Pages and Navigation tasks. |
 | `all` | Runs all scenarios sequentially. |
 
 ---
@@ -86,7 +95,7 @@ python runner.py --scenario all --username "USER_EMAIL" --password "USER_PASSWOR
 
 | Argument | Choices / Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--scenario` | `smoke`, `invalid_login`, `valid_login`, `navigation`, `task1_a`, `task1_b`, `task2`, `all` | `all` | Specific scenario to execute |
+| `--scenario` | `smoke`, `invalid_login`, `valid_login`, `navigation`, `task1_a`, `task1_b`, `task2`, `nav_task1`..`nav_task6`, `nav_all`, `all` | `all` | Specific scenario to execute |
 | `--url` | String (URL) | `https://pgx-dev.datum.bio/` | Target site to run tests against |
 | `--username` | String | Environment / `None` | Account username for authenticated scenarios |
 | `--password` | String | Environment / `None` | Account password for authenticated scenarios |
@@ -170,4 +179,5 @@ pytest -v -s
 # Run a specific test file
 pytest tests/test_task1.py -v -s
 pytest tests/test_task2.py -v -s
+pytest tests/test_pages_and_navigation.py -v -s
 ```
