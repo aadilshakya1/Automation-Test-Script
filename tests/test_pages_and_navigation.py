@@ -120,16 +120,18 @@ def test_task3_education_cards(page: Page):
     ensure_authenticated(page)
     nav = NavigationPage(page, BASE_URL)
 
-    edu_url = f"{BASE_URL.rstrip('/')}/education"
-    page.goto(edu_url, wait_until="networkidle", timeout=30000)
-    nav.dismiss_modal_if_present()
+    # Navigate to /education cleanly via 'Start Learning'
+    nav.navigate_to_education()
 
     # 1. Click 'Take Quiz'. URL should end in /quiz.
     nav.click_take_quiz()
     assert page.url.rstrip("/").endswith("/quiz"), f"Expected URL to end in /quiz after 'Take Quiz', got: {page.url}"
 
     # Return to /education
-    page.goto(edu_url, wait_until="networkidle", timeout=30000)
+    page.go_back(wait_until="networkidle")
+    page.wait_for_timeout(1000)
+    if not page.url.rstrip("/").endswith("/education"):
+        nav.navigate_to_education()
 
     # 2. Click 'Drug Monograph', 'Lectures' and 'Patient Case Simulation' one at a time. URL should stay /education.
     for card_name in ["Drug Monograph", "Lectures", "Patient Case Simulation"]:

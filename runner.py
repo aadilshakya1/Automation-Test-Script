@@ -824,10 +824,10 @@ class TestRunner:
             return True
 
         nav = NavigationPage(page, self.base_url)
-        edu_url = f"{self.base_url.rstrip('/')}/education"
         try:
-            page.goto(edu_url, wait_until="networkidle", timeout=self.timeout)
-            nav.dismiss_modal_if_present()
+            # Navigate cleanly to /education via 'Start Learning'
+            # (Direct goto('/education') causes the server to redirect to '/' and refresh)
+            nav.navigate_to_education()
 
             # 1. Click 'Take Quiz'
             nav.click_take_quiz()
@@ -835,7 +835,10 @@ class TestRunner:
                 raise AssertionError(f"Expected URL to end in /quiz after 'Take Quiz', got: {page.url}")
 
             # Return to /education
-            page.goto(edu_url, wait_until="networkidle", timeout=self.timeout)
+            page.go_back(wait_until="networkidle")
+            page.wait_for_timeout(1000)
+            if not page.url.rstrip("/").endswith("/education"):
+                nav.navigate_to_education()
 
             # 2. Click 'Drug Monograph', 'Lectures' and 'Patient Case Simulation'
             for card_name in ["Drug Monograph", "Lectures", "Patient Case Simulation"]:

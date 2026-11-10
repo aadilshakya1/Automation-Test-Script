@@ -14,12 +14,20 @@ class NavigationPage:
 
     def dismiss_modal_if_present(self):
         """Dismisses the 'Got it, thanks!' Quick Mode Switch modal if present."""
-        got_it_btn = self.page.get_by_role("button", name=re.compile(r"Got it,\s*thanks!?", re.I))
-        if got_it_btn.count() == 0:
-            got_it_btn = self.page.get_by_text(re.compile(r"Got it,\s*thanks!?", re.I))
         try:
+            # Check for "Got it, thanks!" button
+            got_it_btn = self.page.get_by_role("button", name=re.compile(r"Got it,\s*thanks!?", re.I))
+            if got_it_btn.count() == 0:
+                got_it_btn = self.page.get_by_text(re.compile(r"Got it,\s*thanks!?", re.I))
             if got_it_btn.count() > 0 and got_it_btn.first.is_visible():
-                got_it_btn.first.click()
+                got_it_btn.first.click(force=True)
+                self.page.wait_for_timeout(400)
+                return
+
+            # Check for close 'X' button on modal if Got It button isn't found
+            close_btn = self.page.get_by_role("button", name=re.compile(r"close", re.I))
+            if close_btn.count() > 0 and close_btn.first.is_visible():
+                close_btn.first.click(force=True)
                 self.page.wait_for_timeout(400)
         except Exception:
             pass
@@ -41,6 +49,27 @@ class NavigationPage:
         if btn.count() == 0:
             btn = self.page.get_by_text(re.compile(r"Start Learning", re.I))
         return btn
+
+    def navigate_to_education(self):
+        """
+        Navigates to /education cleanly.
+        Direct URL navigation via page.goto('/education') triggers a server/SPA redirect back to '/',
+        refreshing the page. Therefore, if not already on /education, we navigate via 'Start Learning'.
+        """
+        if self.page.url.rstrip("/").endswith("/education"):
+            return
+
+        # Ensure we are on the landing page first
+        if not self.page.url.rstrip("/") == self.base_url.rstrip("/"):
+            self.page.goto(self.base_url, wait_until="networkidle", timeout=DEFAULT_TIMEOUT)
+
+        self.dismiss_modal_if_present()
+
+        start_btn = self.get_start_learning_btn()
+        start_btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        start_btn.first.click()
+        self.page.wait_for_load_state("networkidle", timeout=DEFAULT_TIMEOUT)
+        self.dismiss_modal_if_present()
 
     def click_education_tab(self):
         """Clicks the 'Education' tab in responsive/phone view (Rule 4)."""
