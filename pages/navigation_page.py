@@ -71,6 +71,43 @@ class NavigationPage:
         self.page.wait_for_load_state("networkidle", timeout=DEFAULT_TIMEOUT)
         self.dismiss_modal_if_present()
 
+    def navigate_to_clinical(self):
+        """
+        Navigates to /clinical cleanly.
+        Direct URL navigation via page.goto('/clinical') redirects back to '/'.
+        Therefore, if not already on /clinical, we navigate via 'Launch Platform'.
+        """
+        if self.page.url.rstrip("/").endswith("/clinical"):
+            return
+
+        if not self.page.url.rstrip("/") == self.base_url.rstrip("/"):
+            self.page.goto(self.base_url, wait_until="networkidle", timeout=DEFAULT_TIMEOUT)
+
+        self.dismiss_modal_if_present()
+
+        launch_btn = self.get_launch_platform_btn()
+        launch_btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        launch_btn.first.click()
+        self.page.wait_for_load_state("networkidle", timeout=DEFAULT_TIMEOUT)
+        self.dismiss_modal_if_present()
+
+    def navigate_to_terms_of_use(self):
+        """
+        Navigates to /terms-of-use via the 'Terms of Use' link on /clinical,
+        since direct URL navigation redirects back to '/'.
+        """
+        if self.page.url.rstrip("/").endswith("/terms-of-use"):
+            return
+
+        self.navigate_to_clinical()
+        terms_link = self.page.get_by_role("link", name=re.compile(r"Terms of Use", re.I))
+        if terms_link.count() == 0:
+            terms_link = self.page.get_by_text(re.compile(r"Terms of Use", re.I))
+        terms_link.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        terms_link.first.click()
+        self.page.wait_for_load_state("networkidle", timeout=DEFAULT_TIMEOUT)
+        self.page.wait_for_timeout(500)
+
     def click_education_tab(self):
         """Clicks the 'Education' tab in responsive/phone view (Rule 4)."""
         tab = self.page.get_by_role("tab", name=re.compile(r"^Education", re.I))
@@ -121,14 +158,12 @@ class NavigationPage:
 
     def get_floating_mode_switch_btn(self):
         """
-        Locates the floating mode switch button on screen.
-        Accepts role='button' or title/aria-label containing switch mode text.
+        Locates the floating mode switch button via its accessible name (aria-label).
+        Rule 4: Uses get_by_role() / get_by_text(), never CSS classes.
         """
         btn = self.page.get_by_role("button", name=re.compile(r"Switch to (education|clinical) mode", re.I))
         if btn.count() == 0:
             btn = self.page.get_by_text(re.compile(r"Switch to (education|clinical) mode", re.I))
-        if btn.count() == 0:
-            btn = self.page.locator("button[aria-label*='Switch to' i], button[title*='Switch to' i]")
         return btn
 
     def click_switch_to_education_mode(self):
@@ -136,27 +171,20 @@ class NavigationPage:
         btn = self.page.get_by_role("button", name=re.compile(r"Switch to education mode", re.I))
         if btn.count() == 0:
             btn = self.page.get_by_text(re.compile(r"Switch to education mode", re.I))
-        if btn.count() == 0:
-            btn = self.page.locator("button[aria-label*='education' i], button[title*='education' i]")
-        if btn.count() == 0:
-            # Fallback to floating toggle button
-            btn = self.page.locator("button").filter(has=self.page.locator("svg")).last
         btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
         btn.first.click()
         self.page.wait_for_load_state("networkidle", timeout=DEFAULT_TIMEOUT)
+        self.page.wait_for_timeout(500)
 
     def click_switch_to_clinical_mode(self):
         """Clicks 'Switch to clinical mode' floating button (Rule 4)."""
         btn = self.page.get_by_role("button", name=re.compile(r"Switch to clinical mode", re.I))
         if btn.count() == 0:
             btn = self.page.get_by_text(re.compile(r"Switch to clinical mode", re.I))
-        if btn.count() == 0:
-            btn = self.page.locator("button[aria-label*='clinical' i], button[title*='clinical' i]")
-        if btn.count() == 0:
-            btn = self.page.locator("button").filter(has=self.page.locator("svg")).last
         btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
         btn.first.click()
         self.page.wait_for_load_state("networkidle", timeout=DEFAULT_TIMEOUT)
+        self.page.wait_for_timeout(500)
 
     # ----------------------------------------------------
     # Task 5: Learn More Link

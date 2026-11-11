@@ -882,39 +882,56 @@ class TestRunner:
             return True
 
         nav = NavigationPage(page, self.base_url)
-        clinical_url = f"{self.base_url.rstrip('/')}/clinical"
         try:
-            page.goto(clinical_url, wait_until="networkidle", timeout=self.timeout)
-            nav.dismiss_modal_if_present()
-
-            # Switch to education mode
-            nav.click_switch_to_education_mode()
+            # 1. Login & click 'Start Learning' -> /education
+            nav.navigate_to_education()
             if not page.url.rstrip("/").endswith("/education"):
-                raise AssertionError(f"Expected URL to end in /education after mode switch, got: {page.url}")
+                raise AssertionError(f"Expected URL to end in /education after 'Start Learning', got: {page.url}")
 
-            # Switch back to clinical mode
+            # 2. Click floating switch button ('Switch to clinical mode') -> /clinical
             nav.click_switch_to_clinical_mode()
             if not page.url.rstrip("/").endswith("/clinical"):
-                raise AssertionError(f"Expected URL to end in /clinical after mode switch, got: {page.url}")
+                raise AssertionError(f"Expected URL to end in /clinical after switching to clinical mode, got: {page.url}")
 
-            # Verify button does NOT appear on '/', '/terms-of-use', or '/shared_chat'
-            disallowed_pages = [
-                f"{self.base_url.rstrip('/')}/",
-                f"{self.base_url.rstrip('/')}/terms-of-use",
-                f"{self.base_url.rstrip('/')}/shared_chat"
-            ]
-            for check_url in disallowed_pages:
-                page.goto(check_url, wait_until="networkidle", timeout=self.timeout)
-                nav.dismiss_modal_if_present()
-                btn = nav.get_floating_mode_switch_btn()
-                if btn.count() > 0 and btn.first.is_visible():
-                    raise AssertionError(f"Floating mode switch unexpectedly appeared on: {check_url}")
+            # 3. On /clinical, click floating switch button ('Switch to education mode') -> /education
+            nav.click_switch_to_education_mode()
+            if not page.url.rstrip("/").endswith("/education"):
+                raise AssertionError(f"Expected URL to end in /education after switching to education mode, got: {page.url}")
+
+            # 4. Click 'Switch to clinical mode' again -> back to /clinical
+            nav.click_switch_to_clinical_mode()
+            if not page.url.rstrip("/").endswith("/clinical"):
+                raise AssertionError(f"Expected URL to end in /clinical after switching back, got: {page.url}")
+
+            # 5. Verify button does NOT appear on '/', '/terms-of-use', or '/shared_chat'
+            # Check '/'
+            page.goto(self.base_url, wait_until="networkidle", timeout=self.timeout)
+            nav.dismiss_modal_if_present()
+            btn = nav.get_floating_mode_switch_btn()
+            if btn.count() > 0 and btn.first.is_visible():
+                raise AssertionError(f"Floating mode switch unexpectedly appeared on: {self.base_url}")
+
+            # Check '/terms-of-use' (reached via 'Terms of Use' link so SPA doesn't redirect to '/')
+            nav.navigate_to_terms_of_use()
+            if not page.url.rstrip("/").endswith("/terms-of-use"):
+                raise AssertionError(f"Expected to reach /terms-of-use, got: {page.url}")
+            btn = nav.get_floating_mode_switch_btn()
+            if btn.count() > 0 and btn.first.is_visible():
+                raise AssertionError("Floating mode switch unexpectedly appeared on: /terms-of-use")
+
+            # Check '/shared_chat'
+            shared_chat_url = f"{self.base_url.rstrip('/')}/shared_chat"
+            page.goto(shared_chat_url, wait_until="networkidle", timeout=self.timeout)
+            nav.dismiss_modal_if_present()
+            btn = nav.get_floating_mode_switch_btn()
+            if btn.count() > 0 and btn.first.is_visible():
+                raise AssertionError(f"Floating mode switch unexpectedly appeared on: {shared_chat_url}")
 
             self._record_test(
                 name="nav_task4",
                 status="PASSED",
                 duration_ms=(time.time() - start) * 1000,
-                details={"mode_switch_cycle": "clinical -> education -> clinical", "disallowed_pages_checked": 3}
+                details={"mode_switch_cycle": "education -> clinical -> education -> clinical", "disallowed_pages_checked": ["/", "/terms-of-use", "/shared_chat"]}
             )
             return True
         except Exception as e:
@@ -944,10 +961,8 @@ class TestRunner:
             return True
 
         nav = NavigationPage(page, self.base_url)
-        clinical_url = f"{self.base_url.rstrip('/')}/clinical"
         try:
-            page.goto(clinical_url, wait_until="networkidle", timeout=self.timeout)
-            nav.dismiss_modal_if_present()
+            nav.navigate_to_clinical()
 
             target_page = nav.click_learn_more()
             final_url = target_page.url

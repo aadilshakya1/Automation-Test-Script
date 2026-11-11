@@ -144,41 +144,62 @@ def test_task3_education_cards(page: Page):
 def test_task4_floating_mode_switch(page: Page):
     """
     Task 4: Floating mode switch
-    - On /clinical, click 'Switch to education mode'. The URL should end in /education.
-    - Click 'Switch to clinical mode'. The URL should be back to /clinical.
+    - Login & click 'Start Learning' -> /education.
+    - Click 'Switch to clinical mode' floating button -> /clinical.
+    - On /clinical, click 'Switch to education mode' -> /education.
+    - Click 'Switch to clinical mode' -> back to /clinical.
     - The button must not appear on '/', '/terms-of-use' or '/shared_chat'.
     """
     ensure_authenticated(page)
     nav = NavigationPage(page, BASE_URL)
 
-    # 1. On /clinical, click 'Switch to education mode' -> URL should end in /education
-    clinical_url = f"{BASE_URL.rstrip('/')}/clinical"
-    page.goto(clinical_url, wait_until="networkidle", timeout=30000)
-    nav.dismiss_modal_if_present()
-
-    nav.click_switch_to_education_mode()
+    # 1. Click 'Start Learning' -> /education
+    nav.navigate_to_education()
     assert page.url.rstrip("/").endswith("/education"), (
-        f"Expected URL to end in /education after switching to education mode, got: {page.url}"
+        f"Expected URL to end in /education after 'Start Learning', got: {page.url}"
     )
 
-    # 2. Click 'Switch to clinical mode' -> URL should be back to /clinical
+    # 2. Click 'Switch to clinical mode' -> /clinical
     nav.click_switch_to_clinical_mode()
     assert page.url.rstrip("/").endswith("/clinical"), (
         f"Expected URL to end in /clinical after switching to clinical mode, got: {page.url}"
     )
 
-    # 3. The button must not appear on '/', '/terms-of-use' or '/shared_chat'
-    pages_to_check = [
-        f"{BASE_URL.rstrip('/')}/",
-        f"{BASE_URL.rstrip('/')}/terms-of-use",
-        f"{BASE_URL.rstrip('/')}/shared_chat"
-    ]
-    for check_url in pages_to_check:
-        page.goto(check_url, wait_until="networkidle", timeout=30000)
-        nav.dismiss_modal_if_present()
-        switch_btn = nav.get_floating_mode_switch_btn()
-        is_visible = switch_btn.count() > 0 and switch_btn.first.is_visible()
-        assert not is_visible, f"Floating mode switch button unexpectedly appeared on {check_url}!"
+    # 3. On /clinical, click 'Switch to education mode' -> /education
+    nav.click_switch_to_education_mode()
+    assert page.url.rstrip("/").endswith("/education"), (
+        f"Expected URL to end in /education after switching to education mode, got: {page.url}"
+    )
+
+    # 4. Click 'Switch to clinical mode' -> back to /clinical
+    nav.click_switch_to_clinical_mode()
+    assert page.url.rstrip("/").endswith("/clinical"), (
+        f"Expected URL to end in /clinical after switching back, got: {page.url}"
+    )
+
+    # 5. The button must not appear on '/', '/terms-of-use' or '/shared_chat'
+    page.goto(f"{BASE_URL.rstrip('/')}/", wait_until="networkidle", timeout=30000)
+    nav.dismiss_modal_if_present()
+    switch_btn = nav.get_floating_mode_switch_btn()
+    assert not (switch_btn.count() > 0 and switch_btn.first.is_visible()), (
+        "Floating mode switch button unexpectedly appeared on '/'!"
+    )
+
+    nav.navigate_to_terms_of_use()
+    assert page.url.rstrip("/").endswith("/terms-of-use"), (
+        f"Expected URL to end in /terms-of-use, got: {page.url}"
+    )
+    switch_btn = nav.get_floating_mode_switch_btn()
+    assert not (switch_btn.count() > 0 and switch_btn.first.is_visible()), (
+        "Floating mode switch button unexpectedly appeared on '/terms-of-use'!"
+    )
+
+    page.goto(f"{BASE_URL.rstrip('/')}/shared_chat", wait_until="networkidle", timeout=30000)
+    nav.dismiss_modal_if_present()
+    switch_btn = nav.get_floating_mode_switch_btn()
+    assert not (switch_btn.count() > 0 and switch_btn.first.is_visible()), (
+        "Floating mode switch button unexpectedly appeared on '/shared_chat'!"
+    )
 
 
 def test_task5_learn_more_link(page: Page):
@@ -189,9 +210,7 @@ def test_task5_learn_more_link(page: Page):
     ensure_authenticated(page)
     nav = NavigationPage(page, BASE_URL)
 
-    clinical_url = f"{BASE_URL.rstrip('/')}/clinical"
-    page.goto(clinical_url, wait_until="networkidle", timeout=30000)
-    nav.dismiss_modal_if_present()
+    nav.navigate_to_clinical()
 
     target_page = nav.click_learn_more()
     assert target_page.url.rstrip("/").endswith("/creator-insight"), (
