@@ -213,8 +213,9 @@ def test_task5_learn_more_link(page: Page):
     nav.navigate_to_clinical()
 
     target_page = nav.click_learn_more()
-    assert target_page.url.rstrip("/").endswith("/creator-insight"), (
-        f"Expected URL to end in /creator-insight after clicking 'Learn more', got: {target_page.url}"
+    expected_url = f"{BASE_URL.rstrip('/')}/creator-insight"
+    assert expected_url in target_page.url and target_page.url.rstrip("/").endswith("/creator-insight"), (
+        f"Expected URL '{expected_url}' after clicking 'Learn more', got: {target_page.url}"
     )
     if target_page != page:
         target_page.close()

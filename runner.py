@@ -969,14 +969,15 @@ class TestRunner:
             if target_page != page:
                 target_page.close()
 
-            if not final_url.rstrip("/").endswith("/creator-insight"):
-                raise AssertionError(f"Expected URL to end in /creator-insight after 'Learn more', got: {final_url}")
+            expected_url = f"{self.base_url.rstrip('/')}/creator-insight"
+            if expected_url not in final_url or not final_url.rstrip("/").endswith("/creator-insight"):
+                raise AssertionError(f"Expected URL '{expected_url}' after 'Learn more', got: {final_url}")
 
             self._record_test(
                 name="nav_task5",
                 status="PASSED",
                 duration_ms=(time.time() - start) * 1000,
-                details={"learn_more_target": "/creator-insight"}
+                details={"learn_more_target": expected_url, "actual_url": final_url}
             )
             return True
         except Exception as e:
