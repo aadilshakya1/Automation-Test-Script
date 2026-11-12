@@ -23,15 +23,41 @@ class TaskDocument:
     content: str
 
 
+def _find_docx_main_xml(zf: zipfile.ZipFile) -> Optional[str]:
+    """Locates the main WordprocessingML document XML part inside a .docx archive."""
+    names = zf.namelist()
+    if "word/document.xml" in names:
+        return "word/document.xml"
+
+    # Check _rels/.rels for the primary officeDocument target (e.g. word/document2.xml)
+    if "_rels/.rels" in names:
+        try:
+            rels_root = ET.fromstring(zf.read("_rels/.rels"))
+            for rel in rels_root:
+                rel_type = rel.attrib.get("Type", "")
+                if rel_type.endswith("/officeDocument"):
+                    target = rel.attrib.get("Target", "").lstrip("/")
+                    if target in names:
+                        return target
+        except ET.ParseError:
+            pass
+
+    for candidate in sorted(names):
+        if candidate.startswith("word/document") and candidate.endswith(".xml"):
+            return candidate
+    return None
+
+
 def _extract_docx_text(path: Path) -> str:
     """Extracts paragraph text from a .docx archive using standard-library XML parsing."""
     ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
     paragraphs: List[str] = []
 
     with zipfile.ZipFile(path, "r") as zf:
-        if "word/document.xml" not in zf.namelist():
-            raise ValueError(f"Invalid .docx file (missing word/document.xml): {path}")
-        xml_bytes = zf.read("word/document.xml")
+        doc_part = _find_docx_main_xml(zf)
+        if not doc_part:
+            raise ValueError(f"Invalid .docx file (missing word/document*.xml): {path}")
+        xml_bytes = zf.read(doc_part)
 
     root = ET.fromstring(xml_bytes)
     for para in root.iter(f"{ns}p"):
