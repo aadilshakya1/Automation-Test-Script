@@ -18,11 +18,28 @@ from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-from config import BASE_URL, DEFAULT_TIMEOUT, GEMINI_API_KEY, SCREENSHOTS_DIR
+from config import (
+    BASE_URL,
+    DEFAULT_TIMEOUT,
+    GEMINI_API_KEY,
+    LLM_API_KEY,
+    LLM_MODEL,
+    SCREENSHOTS_DIR,
+    TASK_DIR,
+    TEST_PASSWORD,
+    TEST_USERNAME,
+)
 from pages.login_page import LoginPage
 from pages.clinical_page import ClinicalPage
 from pages.navigation_page import NavigationPage
 from utils.ai_judge import GeminiAIJudge, PGxCaseContext
+from utils.app_explorer import explore_live_app, summarize_page_objects
+from utils.task_reader import NoTaskFilesError, load_tasks
+from utils.test_generator import (
+    ApprovalRequiredError,
+    LLMTestGenerator,
+    execute_generated_pytest,
+)
 
 
 class TestRunner:
@@ -1122,12 +1139,189 @@ class TestRunner:
             )
             return False
 
+    def run_generate_tests(
+        self,
+        page,
+        username: str = None,
+        password: str = None,
+        api_key: str = None,
+        model: str = None,
+        task_file: str = None,
+        explore: bool = True,
+        approve: bool = False,
+        interactive: bool = False,
+    ) -> bool:
+        """
+        Reads plain-English task docs from task/, explores the app + Page Objects,
+        generates human-reviewable scenarios + tests/test_generated.py via LLM,
+        and pauses for approval before executing pytest unless --approve or interactive confirmation is given.
+        """
+        start = time.time()
+        key = (api_key or LLM_API_KEY or "").strip()
+        if not key:
+            self._record_test(
+                name="generate_tests",
+                status="SKIPPED",
+                duration_ms=0,
+                details={
+                    "reason": "OpenRouter/OpenAI API key not provided. Pass --api-key or set OPENROUTER_API_KEY / OPENAI_API_KEY."
+                },
+            )
+            return True
+
+        try:
+            tasks = load_tasks(
+                task_dir=TASK_DIR,
+                specific_file=Path(task_file) if task_file else None,
+            )
+            po_summary = summarize_page_objects()
+
+            user = username or TEST_USERNAME
+            pwd = password or TEST_PASSWORD
+            snapshots = []
+            if explore:
+                try:
+                    snapshots = explore_live_app(page, base_url=self.base_url, username=user, password=pwd)
+                except Exception:
+                    snapshots = []
+
+            generator = LLMTestGenerator(api_key=key, model=model or LLM_MODEL)
+            result = generator.generate(
+                tasks=tasks,
+                page_object_summary=po_summary,
+                live_snapshots=snapshots,
+            )
+
+            scenario_list = [
+                {"id": s.id, "title": s.title, "expected_result": s.expected_result}
+                for s in result.scenarios
+            ]
+
+            self._record_test(
+                name="generate_tests",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details={
+                    "task_files": result.task_files,
+                    "plan_file": str(result.plan_file_path),
+                    "generated_test_file": str(result.test_file_path),
+                    "model_used": result.model_used,
+                    "scenarios": scenario_list,
+                    "awaiting_approval": not approve,
+                },
+            )
+
+            if interactive and not approve:
+                print("\n--- Generated Scenarios for Approval ---")
+                for s in result.scenarios:
+                    print(f"  [{s.id}] {s.title} -> Expected: {s.expected_result}")
+                print(f"Plan file: {result.plan_file_path}")
+                print(f"Code file: {result.test_file_path}")
+                ans = input("Approve and execute tests/test_generated.py with pytest? [y/N]: ").strip().lower()
+                approve = ans in ("y", "yes")
+
+            if approve:
+                return self.run_generated_suite(
+                    page,
+                    username=user,
+                    password=pwd,
+                    approve=True,
+                )
+
+            return True
+        except NoTaskFilesError as e:
+            self._record_test(
+                name="generate_tests",
+                status="SKIPPED",
+                duration_ms=(time.time() - start) * 1000,
+                details={"reason": str(e)},
+            )
+            return True
+        except Exception as e:
+            shot = self._capture_failure(page, "generate_tests")
+            self._record_test(
+                name="generate_tests",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+                screenshot=shot,
+            )
+            return False
+
+    def run_generated_suite(
+        self,
+        page,
+        username: str = None,
+        password: str = None,
+        approve: bool = False,
+        interactive: bool = False,
+    ) -> bool:
+        """
+        Executes pytest on tests/test_generated.py after approval and reports PASS/FAIL.
+        """
+        start = time.time()
+        user = username or TEST_USERNAME
+        pwd = password or TEST_PASSWORD
+
+        try:
+            if interactive and not approve:
+                ans = input("Approve and run tests/test_generated.py via pytest? [y/N]: ").strip().lower()
+                approve = ans in ("y", "yes")
+
+            outcome = execute_generated_pytest(
+                approve=approve,
+                env_overrides={
+                    "PGX_USERNAME": user or "",
+                    "PGX_PASSWORD": pwd or "",
+                    "HEADLESS": "false" if not self.headless else "true",
+                    "PGX_URL": self.base_url,
+                },
+            )
+            if outcome["exit_code"] != 0:
+                raise AssertionError(
+                    f"Pytest failed (exit_code={outcome['exit_code']}):\n{outcome['output'][-1500:]}"
+                )
+
+            self._record_test(
+                name="run_generated",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details={
+                    "test_file": outcome["test_file"],
+                    "exit_code": outcome["exit_code"],
+                    "pytest_output": outcome["output"][-1500:],
+                },
+            )
+            return True
+        except ApprovalRequiredError as e:
+            self._record_test(
+                name="run_generated",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+            )
+            return False
+        except Exception as e:
+            self._record_test(
+                name="run_generated",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+            )
+            return False
+
     def execute(
         self,
         scenario: str = "all",
         username: str = None,
         password: str = None,
         gemini_key: str = None,
+        api_key: str = None,
+        llm_model: str = None,
+        task_file: str = None,
+        approve: bool = False,
+        explore: bool = True,
+        interactive: bool = False,
     ) -> dict:
         """Executes designated scenarios and generates final summary report."""
         with sync_playwright() as p:
@@ -1168,6 +1362,30 @@ class TestRunner:
                         pg, username=username, password=password, gemini_key=gemini_key
                     )
                 )
+            if scenario == "generate_tests":
+                scenarios_to_run.append(
+                    lambda pg: self.run_generate_tests(
+                        pg,
+                        username=username,
+                        password=password,
+                        api_key=api_key,
+                        model=llm_model,
+                        task_file=task_file,
+                        explore=explore,
+                        approve=approve,
+                        interactive=interactive,
+                    )
+                )
+            if scenario == "run_generated":
+                scenarios_to_run.append(
+                    lambda pg: self.run_generated_suite(
+                        pg,
+                        username=username,
+                        password=password,
+                        approve=approve,
+                        interactive=interactive,
+                    )
+                )
 
             for test_func in scenarios_to_run:
                 test_func(page)
@@ -1196,7 +1414,7 @@ def main():
             "smoke", "invalid_login", "valid_login", "navigation",
             "task1_a", "task1_b", "task2",
             "nav_task1", "nav_task2", "nav_task3", "nav_task4", "nav_task5", "nav_task6", "nav_all",
-            "ai_judge", "all"
+            "ai_judge", "generate_tests", "run_generated", "all"
         ],
         default="all",
         help="Test scenario to execute (default: all)"
@@ -1208,6 +1426,12 @@ def main():
     parser.add_argument("--username", type=str, help="Username for valid login test")
     parser.add_argument("--password", type=str, help="Password for valid login test")
     parser.add_argument("--gemini-key", type=str, help="Gemini API key for ai_judge scenario (or set GEMINI_API_KEY)")
+    parser.add_argument("--api-key", type=str, help="OpenRouter/OpenAI API key for generate_tests (or set OPENROUTER_API_KEY/OPENAI_API_KEY)")
+    parser.add_argument("--llm-model", type=str, help="Model name for generate_tests (default from config)")
+    parser.add_argument("--task-file", type=str, help="Specific task doc file inside task/ to generate tests from")
+    parser.add_argument("--approve", action="store_true", help="Approve generated tests/test_generated.py for pytest execution")
+    parser.add_argument("--no-explore", action="store_true", help="Skip live browser exploration when generating tests")
+    parser.add_argument("--interactive", action="store_true", help="Prompt interactively for approval before running pytest")
 
     args = parser.parse_args()
 
@@ -1217,6 +1441,12 @@ def main():
         username=args.username,
         password=args.password,
         gemini_key=args.gemini_key,
+        api_key=args.api_key,
+        llm_model=args.llm_model,
+        task_file=args.task_file,
+        approve=args.approve,
+        explore=not args.no_explore,
+        interactive=args.interactive,
     )
 
     if args.output:
@@ -1241,6 +1471,15 @@ def main():
                 mark = "[FAIL]"
 
             print(f"  {mark} {test['scenario']} ({test['duration_ms']}ms)")
+            if test["status"] == "PASSED" and test["scenario"] == "generate_tests":
+                details = test.get("details", {})
+                print(f"         Plan File: {details.get('plan_file')}")
+                print(f"         Code File: {details.get('generated_test_file')}")
+                for sc in details.get("scenarios", []):
+                    print(f"           - [{sc['id']}] {sc['title']}")
+                if details.get("awaiting_approval"):
+                    print("         Status: Awaiting your approval -> review the plan/code, then run:")
+                    print("                 runner.py --scenario run_generated --approve")
             if test["status"] == "SKIPPED" and "reason" in test.get("details", {}):
                 print(f"         Reason: {test['details']['reason']}")
             if test["status"] == "FAILED":

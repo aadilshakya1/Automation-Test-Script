@@ -23,6 +23,7 @@ htmlcov/
 # Test Artifacts & Screenshots (keep folder structure via .gitkeep)
 artifacts/screenshots/*.png
 !artifacts/screenshots/.gitkeep
+artifacts/generated_*
 
 # IDEs & OS files
 .vscode/
