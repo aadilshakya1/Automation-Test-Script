@@ -137,14 +137,20 @@ class LLMTestGenerator:
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(tasks, page_object_summary, live_snapshots or [])
 
-        if self._transport is not None:
-            raw_reply = self._transport(system_prompt, user_prompt)
-        elif self.provider == "gemini":
-            raw_reply = self._call_gemini(system_prompt, user_prompt)
-        else:
-            raw_reply = self._call_chat_completions(system_prompt, user_prompt)
-
+        raw_reply = self._invoke_llm(system_prompt, user_prompt)
         scenarios, pytest_code = self._parse_generation_payload(raw_reply)
+
+        issues = self._find_code_issues(pytest_code)
+        if issues and self._transport is None:
+            repair_prompt = (
+                "Fix ONLY the Playwright/pytest issues listed below in `pytest_code` and return "
+                "the corrected JSON (`scenarios` and `pytest_code`):\n"
+                + "\n".join(f"- {issue}" for issue in issues)
+                + f"\n\n### Current pytest_code:\n```python\n{pytest_code}\n```"
+            )
+            repaired_reply = self._invoke_llm(system_prompt, repair_prompt)
+            scenarios, pytest_code = self._parse_generation_payload(repaired_reply)
+
         self._validate_python_syntax(pytest_code)
 
         output_test_path.parent.mkdir(parents=True, exist_ok=True)
@@ -197,13 +203,27 @@ class LLMTestGenerator:
             "STRICT RULES FOR GENERATED PYTEST CODE:\n"
             "1. Always import config values: `from config import BASE_URL, TEST_USERNAME, TEST_PASSWORD, HEADLESS`.\n"
             "   Never hardcode passwords or API keys. Skip authenticated tests if TEST_USERNAME/TEST_PASSWORD are empty.\n"
-            "2. Never use real patient data; only use made-up synthetic ages, genes (e.g. CYP2C19, CYP2D6), and conditions.\n"
-            "3. Locate interactive UI buttons/links/tabs strictly with `page.get_by_role(...)` or `page.get_by_text(...)`, NEVER CSS classes.\n"
-            "4. Reuse existing Page Objects (`LoginPage`, `ClinicalPage`, `NavigationPage`) whenever appropriate.\n"
-            "5. Important app routing note: Direct `page.goto('/clinical')` or `page.goto('/education')` redirects to '/'. "
-            "Use `NavigationPage.navigate_to_clinical()` or `NavigationPage.navigate_to_education()` after login.\n"
-            "6. Include standard pytest browser/page fixtures (`browser_context`, `page`) using `sync_playwright()`.\n"
-            "7. Respond strictly with valid JSON matching:\n"
+            "2. BASE_URL already has a trailing slash. ALWAYS build URLs using `f\"{BASE_URL.rstrip('/')}/path\"` "
+            "(NEVER `BASE_URL + '/path'`, which creates double slashes `//path`).\n"
+            "3. Never use real patient data; only use made-up synthetic ages, genes (e.g. CYP2C19, CYP2D6), and conditions.\n"
+            "4. Locate interactive UI buttons/links/tabs strictly with `page.get_by_role(...)` or `page.get_by_text(...)`, NEVER CSS classes.\n"
+            "5. ONLY call methods that explicitly exist in the provided Page Object signatures "
+            "(for example, `dismiss_modal_if_present()` is on `NavigationPage`, NOT `ClinicalPage`).\n"
+            "6. Playwright `expect(...)` ONLY works on `Page` or `Locator` objects (e.g. `expect(locator).to_be_visible()`). "
+            "NEVER pass booleans or strings into `expect(...)` (there is NO `to_be_true()` or `to_equal()` in Python Playwright!). "
+            "Use plain Python `assert` for booleans, strings, URLs, and helper method return values.\n"
+            "7. Authentication & App Routing:\n"
+            "   - Every page EXCEPT `/shared_chat` (including `/`, `/clinical`, `/education`, `/terms-of-use`) requires login via `LoginPage`.\n"
+            "   - ALWAYS guard login calls with `if login_page.is_login_page_displayed(): login_page.login(TEST_USERNAME, TEST_PASSWORD)` "
+            "(NEVER write `assert login_page.is_login_page_displayed()` because shared browser contexts persist auth cookies!).\n"
+            "   - Direct `page.goto('/clinical')`, `page.goto('/education')`, or `page.goto('/terms-of-use')` redirects back to '/'. "
+            "Always use `NavigationPage.navigate_to_clinical()`, `NavigationPage.navigate_to_education()`, and `NavigationPage.navigate_to_terms_of_use()`.\n"
+            "   - Always call `NavigationPage.dismiss_modal_if_present()` on '/' and after navigating to '/clinical' or '/education'.\n"
+            "   - On `/clinical`, call `clinical_page.click_add_demographics()` before `fill_age()` or `select_sex()`.\n"
+            "   - On `/education`, clicking 'Drug Monograph', 'Lectures', or 'Patient Case Simulation' stays on `/education`; do NOT call `page.go_back()` after clicking them.\n"
+            "8. Check `get_floating_mode_switch_btn()` visibility safely with `btn = nav.get_floating_mode_switch_btn(); assert not (btn.count() > 0 and btn.first.is_visible())`.\n"
+            "9. Include standard pytest browser/page fixtures (`browser_context`, `page`) using `sync_playwright()` with `scope='function'` for `browser_context` and `permissions=['clipboard-read', 'clipboard-write']`.\n"
+            "10. Respond strictly with valid JSON matching:\n"
             "{\n"
             '  "scenarios": [\n'
             '    {"id": "TC01", "title": "...", "steps": ["..."], "expected_result": "...", "synthetic_data_used": "..."}\n'
@@ -376,6 +396,46 @@ class LLMTestGenerator:
                 lines = lines[:-1]
             return "\n".join(lines).strip()
         return stripped
+
+    def _invoke_llm(self, system_prompt: str, user_prompt: str) -> str:
+        """Dispatches generation/repair prompt to the configured transport or LLM API."""
+        if self._transport is not None:
+            return self._transport(system_prompt, user_prompt)
+        if self.provider == "gemini":
+            return self._call_gemini(system_prompt, user_prompt)
+        return self._call_chat_completions(system_prompt, user_prompt)
+
+    def _find_code_issues(self, code: str) -> List[str]:
+        """Detects common Playwright Python anti-patterns so the LLM can self-repair before approval."""
+        issues: List[str] = []
+        try:
+            ast.parse(code)
+        except SyntaxError as exc:
+            issues.append(f"Python syntax error: {exc}")
+
+        if ".to_be_true(" in code or ".to_be_false(" in code or ".to_equal(" in code:
+            issues.append(
+                "Invalid Python Playwright assertions (.to_be_true(), .to_be_false(), or .to_equal()). "
+                "Use plain Python `assert` for booleans and strings; `expect()` is ONLY for Page/Locator."
+            )
+        if 'BASE_URL + "/' in code or "BASE_URL + '/" in code:
+            issues.append(
+                'Direct `BASE_URL + "/..."` creates double slashes. Replace with `f"{BASE_URL.rstrip(\'/\')}/..."`.'
+            )
+        if "clinical_page.dismiss_modal_if_present" in code or "clinical.dismiss_modal_if_present" in code:
+            issues.append(
+                "`dismiss_modal_if_present()` does not exist on `ClinicalPage`; call it on `NavigationPage`."
+            )
+        if "assert login_page.is_login_page_displayed()" in code:
+            issues.append(
+                "Do not assert `login_page.is_login_page_displayed()`; guard `login_page.login(...)` with "
+                "`if login_page.is_login_page_displayed():` instead."
+            )
+        if "login_page.login(" in code and "is_login_page_displayed()" not in code:
+            issues.append(
+                "Wrap every `login_page.login(...)` call inside `if login_page.is_login_page_displayed():`."
+            )
+        return issues
 
     def _validate_python_syntax(self, code: str):
         try:

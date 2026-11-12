@@ -172,3 +172,20 @@ def test_llm_generator_auto_detects_gemini_provider():
 
     gen_aiza = LLMTestGenerator(api_key="AIzaSyTestKey")
     assert gen_aiza.provider == "gemini"
+
+
+def test_llm_generator_detects_playwright_antipatterns():
+    """Confirms _find_code_issues flags common Playwright Python & auth pitfalls."""
+    gen = LLMTestGenerator(api_key="AQ.test-key")
+    bad_code = (
+        'url = BASE_URL + "/clinical"\n'
+        "assert login_page.is_login_page_displayed()\n"
+        "expect(clinical_page.is_manual_form_open()).to_be_true()\n"
+        "clinical_page.dismiss_modal_if_present()\n"
+    )
+    issues = gen._find_code_issues(bad_code)
+    joined = " | ".join(issues)
+    assert "to_be_true()" in joined
+    assert "double slashes" in joined
+    assert "ClinicalPage" in joined
+    assert "is_login_page_displayed()" in joined
