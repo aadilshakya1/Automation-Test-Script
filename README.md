@@ -30,12 +30,16 @@ Playwright/
 │   ├── login_page.py           # Page Object for authentication & platform launching
 │   ├── clinical_page.py        # Page Object for /clinical (modes, form inputs, threads, sharing)
 │   └── navigation_page.py      # Page Object for Pages & Navigation (landing, phone view, education cards, switch, links)
+├── utils/
+│   ├── __init__.py
+│   └── ai_judge.py             # Gemini-powered AI Judge for PGx clinical output validation
 └── tests/
     ├── __init__.py
     ├── test_login.py           # Smoke, invalid credentials, and navigation tests
     ├── test_task1.py           # Task 1: Prompt Mode vs Manual Entry (Part A & Part B)
     ├── test_task2.py           # Task 2: Thread isolation, persistence across reload, and sharing
-    └── test_pages_and_navigation.py # Tasks 1-6: Pages & Navigation suite
+    ├── test_pages_and_navigation.py # Tasks 1-6: Pages & Navigation suite
+    └── test_ai_judge.py        # Unit tests + live Playwright/Gemini PGx evaluation suite
 ```
 
 ---
@@ -58,6 +62,7 @@ Playwright/
 | `nav_task5` | **Pages & Navigation Task 5**: Sidebar "Learn more" link navigating to `/creator-insight`. |
 | `nav_task6` | **Pages & Navigation Task 6**: Broken share links error validation on `/shared_chat` and `/shared_chat?uId=ab`. |
 | `nav_all` | Runs all 6 Pages and Navigation tasks. |
+| `ai_judge` | **Gemini AI Judge**: Runs a synthetic PGx assessment (`CYP2C19`, `Intermediate Metabolizer`) and evaluates clinical response quality & safety via Gemini. |
 | `all` | Runs all scenarios sequentially. |
 
 ---
@@ -95,10 +100,11 @@ python runner.py --scenario all --username "USER_EMAIL" --password "USER_PASSWOR
 
 | Argument | Choices / Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--scenario` | `smoke`, `invalid_login`, `valid_login`, `navigation`, `task1_a`, `task1_b`, `task2`, `nav_task1`..`nav_task6`, `nav_all`, `all` | `all` | Specific scenario to execute |
+| `--scenario` | `smoke`, `invalid_login`, `valid_login`, `navigation`, `task1_a`, `task1_b`, `task2`, `nav_task1`..`nav_task6`, `nav_all`, `ai_judge`, `all` | `all` | Specific scenario to execute |
 | `--url` | String (URL) | `https://pgx-dev.datum.bio/` | Target site to run tests against |
 | `--username` | String | Environment / `None` | Account username for authenticated scenarios |
 | `--password` | String | Environment / `None` | Account password for authenticated scenarios |
+| `--gemini-key` | String | `GEMINI_API_KEY` env / `None` | Gemini API key for the `ai_judge` scenario |
 | `--headed` | Flag | `False` (headless) | Launch visible browser window for debugging |
 | `--json` | Flag | `False` | Emits pure JSON string to `stdout` |
 | `--output` | File path | `""` | Writes JSON report to a file |

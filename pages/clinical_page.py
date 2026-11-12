@@ -269,6 +269,22 @@ class ClinicalPage:
             pass
         self.page.wait_for_load_state("networkidle", timeout=DEFAULT_TIMEOUT)
 
+    def get_assessment_response_text(self, timeout: int = DEFAULT_TIMEOUT) -> str:
+        """
+        Waits for the PGx clinical assessment results container to render
+        and extracts its visible text for validation or AI judging (Rule 4).
+        """
+        heading = self.page.get_by_text(
+            re.compile(r"(PHARMACOGENOMIC RECOMMENDATIONS|Genetic Information)", re.I)
+        )
+        heading.first.wait_for(state="visible", timeout=timeout)
+        self.page.wait_for_timeout(1000)
+
+        main_region = self.page.get_by_role("main")
+        if main_region.count() > 0:
+            return main_region.first.inner_text().strip()
+        return self.page.locator("body").inner_text().strip()
+
     def click_navigate_to_home(self):
         """Clicks 'Navigate to Home' in the sidebar to start a new thread (Rule 4)."""
         btn = self.page.get_by_text(re.compile(r"Navigate to Home", re.I))

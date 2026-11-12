@@ -24,3 +24,7 @@ HEADLESS = os.environ.get("HEADLESS", "true").lower() in ("true", "1", "yes")
 # Optional credentials for authenticated tests
 TEST_USERNAME = os.environ.get("PGX_USERNAME", "")
 TEST_PASSWORD = os.environ.get("PGX_PASSWORD", "")
+
+# Gemini AI Judge Configuration
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")

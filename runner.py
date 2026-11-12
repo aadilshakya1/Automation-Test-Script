@@ -18,10 +18,11 @@ from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-from config import BASE_URL, DEFAULT_TIMEOUT, SCREENSHOTS_DIR
+from config import BASE_URL, DEFAULT_TIMEOUT, GEMINI_API_KEY, SCREENSHOTS_DIR
 from pages.login_page import LoginPage
 from pages.clinical_page import ClinicalPage
 from pages.navigation_page import NavigationPage
+from utils.ai_judge import GeminiAIJudge, PGxCaseContext
 
 
 class TestRunner:
@@ -1028,7 +1029,106 @@ class TestRunner:
             )
             return False
 
-    def execute(self, scenario: str = "all", username: str = None, password: str = None) -> dict:
+    def run_ai_judge(
+        self,
+        page,
+        username: str = None,
+        password: str = None,
+        gemini_key: str = None,
+    ) -> bool:
+        """
+        AI-Driven QA Scenario: Runs a synthetic PGx clinical assessment on /clinical
+        and evaluates the rendered clinical recommendations using GeminiAIJudge.
+        """
+        start = time.time()
+        api_key = (gemini_key or GEMINI_API_KEY or "").strip()
+        if not api_key:
+            self._record_test(
+                name="ai_judge",
+                status="SKIPPED",
+                duration_ms=0,
+                details={
+                    "reason": "Gemini API key not provided. Pass --gemini-key or set GEMINI_API_KEY."
+                },
+            )
+            return True
+
+        if not self._ensure_auth(page, username, password):
+            self._record_test(
+                name="ai_judge",
+                status="SKIPPED",
+                duration_ms=0,
+                details={
+                    "reason": "No credentials provided. Pass via --username/--password or set PGX_USERNAME/PGX_PASSWORD."
+                },
+            )
+            return True
+
+        nav = NavigationPage(page, self.base_url)
+        try:
+            nav.navigate_to_clinical()
+            clinical = ClinicalPage(page)
+
+            if not clinical.is_manual_form_open():
+                clinical.click_enter_gene_panel_manually()
+                page.wait_for_timeout(1000)
+
+            case = PGxCaseContext(
+                age="42",
+                sex="Male",
+                gene="CYP2C19",
+                phenotype="Intermediate Metabolizer",
+                expected_criteria=[
+                    "Displays Genetic Information with CYP2C19 and Intermediate Metabolizer.",
+                    "Categorizes clopidogrel as requiring alternative therapy (e.g., Alternative use strongly recommended).",
+                    "Indicates guideline coverage citing CPIC.",
+                    "Includes a medical disclaimer noting content is a guide and not a substitute for clinical judgment.",
+                ],
+            )
+
+            clinical.fill_age(case.age)
+            clinical.select_sex(case.sex)
+            clinical.select_gene(case.gene)
+            clinical.select_phenotype(case.phenotype)
+            page.wait_for_timeout(500)
+
+            clinical.run_assessment(timeout=90000)
+            rendered_output = clinical.get_assessment_response_text()
+
+            judge = GeminiAIJudge(api_key=api_key)
+            verdict = judge.evaluate(case, rendered_output)
+
+            if not verdict.passed:
+                raise AssertionError(
+                    f"Gemini AI Judge failed (score={verdict.score}): {verdict.summary} | "
+                    f"Safety flags: {verdict.clinical_safety_flags}"
+                )
+
+            self._record_test(
+                name="ai_judge",
+                status="PASSED",
+                duration_ms=(time.time() - start) * 1000,
+                details=verdict.to_dict(),
+            )
+            return True
+        except Exception as e:
+            shot = self._capture_failure(page, "ai_judge")
+            self._record_test(
+                name="ai_judge",
+                status="FAILED",
+                duration_ms=(time.time() - start) * 1000,
+                error=str(e),
+                screenshot=shot,
+            )
+            return False
+
+    def execute(
+        self,
+        scenario: str = "all",
+        username: str = None,
+        password: str = None,
+        gemini_key: str = None,
+    ) -> dict:
         """Executes designated scenarios and generates final summary report."""
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=self.headless)
@@ -1062,6 +1162,12 @@ class TestRunner:
                 scenarios_to_run.append(lambda pg: self.run_nav_task5(pg, username=username, password=password))
             if scenario in ("nav_task6", "nav_all", "all"):
                 scenarios_to_run.append(self.run_nav_task6)
+            if scenario in ("ai_judge", "all"):
+                scenarios_to_run.append(
+                    lambda pg: self.run_ai_judge(
+                        pg, username=username, password=password, gemini_key=gemini_key
+                    )
+                )
 
             for test_func in scenarios_to_run:
                 test_func(page)
@@ -1090,7 +1196,7 @@ def main():
             "smoke", "invalid_login", "valid_login", "navigation",
             "task1_a", "task1_b", "task2",
             "nav_task1", "nav_task2", "nav_task3", "nav_task4", "nav_task5", "nav_task6", "nav_all",
-            "all"
+            "ai_judge", "all"
         ],
         default="all",
         help="Test scenario to execute (default: all)"
@@ -1101,11 +1207,17 @@ def main():
     parser.add_argument("--output", type=str, default="", help="Path to write JSON test report")
     parser.add_argument("--username", type=str, help="Username for valid login test")
     parser.add_argument("--password", type=str, help="Password for valid login test")
+    parser.add_argument("--gemini-key", type=str, help="Gemini API key for ai_judge scenario (or set GEMINI_API_KEY)")
 
     args = parser.parse_args()
 
     runner = TestRunner(base_url=args.url, headless=not args.headed)
-    results = runner.execute(scenario=args.scenario, username=args.username, password=args.password)
+    results = runner.execute(
+        scenario=args.scenario,
+        username=args.username,
+        password=args.password,
+        gemini_key=args.gemini_key,
+    )
 
     if args.output:
         out_path = Path(args.output)
