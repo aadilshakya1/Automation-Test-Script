@@ -122,10 +122,8 @@ class ClinicalPage:
         self.page.keyboard.type(str(value_to_select), delay=50)
         self.page.wait_for_timeout(400)
 
-        # 3. Select matching option from dropdown menu
+        # 3. Select matching option from dropdown menu (only click actual option roles, otherwise press Enter)
         option = self.page.get_by_role("option", name=re.compile(rf"^{re.escape(str(value_to_select))}", re.I))
-        if option.count() == 0:
-            option = self.page.get_by_text(re.compile(rf"^{re.escape(str(value_to_select))}", re.I))
 
         selected_text = str(value_to_select)
         if option.count() > 0 and option.first.is_visible():

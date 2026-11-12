@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
     GENERATED_PLAN_PATH,
     GENERATED_STATE_PATH,
     GENERATED_TEST_PATH,
@@ -70,13 +72,30 @@ class LLMTestGenerator:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model: Optional[str] = None,
+        provider: Optional[str] = None,
         transport: Optional[Callable[[str, str], str]] = None,
     ):
-        self.api_key = (api_key if api_key is not None else LLM_API_KEY).strip()
+        self.api_key = (api_key if api_key is not None else (LLM_API_KEY or GEMINI_API_KEY)).strip()
+
+        if provider:
+            self.provider = provider.lower()
+        elif self.api_key.startswith(("AIza", "AQ.")) or (model and model.lower().startswith("gemini")):
+            self.provider = "gemini"
+        elif self.api_key.startswith("sk-or-"):
+            self.provider = "openrouter"
+        elif self.api_key:
+            self.provider = "openai"
+        elif GEMINI_API_KEY and not LLM_API_KEY:
+            self.provider = "gemini"
+        else:
+            self.provider = "openai"
+
         if base_url:
             self.base_url = base_url.rstrip("/")
-        elif self.api_key.startswith("sk-or-"):
+        elif self.provider == "openrouter":
             self.base_url = "https://openrouter.ai/api/v1"
+        elif self.provider == "gemini":
+            self.base_url = "https://generativelanguage.googleapis.com/v1beta"
         elif self.api_key:
             self.base_url = "https://api.openai.com/v1"
         else:
@@ -84,7 +103,9 @@ class LLMTestGenerator:
 
         if model:
             self.model = model
-        elif self.api_key.startswith("sk-or-") and "/" not in LLM_MODEL:
+        elif self.provider == "gemini":
+            self.model = GEMINI_MODEL
+        elif self.provider == "openrouter" and "/" not in LLM_MODEL:
             self.model = f"openai/{LLM_MODEL}"
         else:
             self.model = LLM_MODEL
@@ -109,8 +130,8 @@ class LLMTestGenerator:
 
         if self._transport is None and not self.api_key:
             raise MissingLLMKeyError(
-                "GPT/OpenRouter API key not configured. Set OPENROUTER_API_KEY or OPENAI_API_KEY "
-                "(or pass --api-key)."
+                "LLM API key not configured. Set GEMINI_API_KEY, OPENROUTER_API_KEY, "
+                "or OPENAI_API_KEY (or pass --gemini-key / --api-key)."
             )
 
         system_prompt = self._build_system_prompt()
@@ -118,6 +139,8 @@ class LLMTestGenerator:
 
         if self._transport is not None:
             raw_reply = self._transport(system_prompt, user_prompt)
+        elif self.provider == "gemini":
+            raw_reply = self._call_gemini(system_prompt, user_prompt)
         else:
             raw_reply = self._call_chat_completions(system_prompt, user_prompt)
 
@@ -250,6 +273,66 @@ class LLMTestGenerator:
         content = choices[0].get("message", {}).get("content", "").strip()
         if not content:
             raise GenerationError("LLM API returned empty message content.")
+        return content
+
+    def _call_gemini(self, system_prompt: str, user_prompt: str) -> str:
+        """Calls Google Gemini generateContent REST API with structured JSON output."""
+        endpoint = f"{self.base_url}/models/{self.model}:generateContent"
+        response_schema = {
+            "type": "object",
+            "properties": {
+                "scenarios": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "title": {"type": "string"},
+                            "steps": {"type": "array", "items": {"type": "string"}},
+                            "expected_result": {"type": "string"},
+                            "synthetic_data_used": {"type": "string"},
+                        },
+                        "required": ["id", "title", "steps", "expected_result"],
+                    },
+                },
+                "pytest_code": {"type": "string"},
+            },
+            "required": ["scenarios", "pytest_code"],
+        }
+        payload = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+                "responseSchema": response_schema,
+            },
+        }
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            err_body = exc.read().decode("utf-8", errors="replace")
+            raise GenerationError(f"Gemini API HTTP {exc.code}: {err_body}") from exc
+        except Exception as exc:
+            raise GenerationError(f"Gemini API request failed: {exc}") from exc
+
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise GenerationError(f"Gemini API returned no candidates: {data}")
+        parts = candidates[0].get("content", {}).get("parts") or []
+        content = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+        if not content:
+            raise GenerationError(f"Gemini API returned empty text parts: {data}")
         return content
 
     def _parse_generation_payload(

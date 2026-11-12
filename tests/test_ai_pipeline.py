@@ -161,3 +161,14 @@ def test_llm_generator_missing_key_raises(tmp_path: Path):
     gen = LLMTestGenerator(api_key="")
     with pytest.raises(MissingLLMKeyError):
         gen.generate(tasks=tasks, page_object_summary="summary")
+
+
+def test_llm_generator_auto_detects_gemini_provider():
+    """Ensures AQ. and AIza Gemini API keys auto-select Gemini endpoint & model."""
+    gen_aq = LLMTestGenerator(api_key="AQ.test-key")
+    assert gen_aq.provider == "gemini"
+    assert "generativelanguage.googleapis.com" in gen_aq.base_url
+    assert gen_aq.model.startswith("gemini")
+
+    gen_aiza = LLMTestGenerator(api_key="AIzaSyTestKey")
+    assert gen_aiza.provider == "gemini"

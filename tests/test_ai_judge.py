@@ -11,6 +11,7 @@ from config import (
 )
 from pages.clinical_page import ClinicalPage
 from pages.login_page import LoginPage
+from pages.navigation_page import NavigationPage
 from utils.ai_judge import (
     GeminiAIJudge,
     JudgeAPIError,
@@ -170,18 +171,19 @@ def test_live_pgx_clinical_assessment_with_ai_judge(page: Page):
     if not GEMINI_API_KEY:
         pytest.skip("GEMINI_API_KEY not provided. Set GEMINI_API_KEY to run live Gemini evaluation.")
 
-    # 1. Authenticate and launch /clinical
+    # 1. Authenticate and launch /clinical cleanly (handles onboarding modal on / and /clinical)
     login_page = LoginPage(page, BASE_URL)
     login_page.navigate()
     login_page.login(TEST_USERNAME, TEST_PASSWORD)
     page.wait_for_load_state("networkidle", timeout=30000)
 
-    active_page = login_page.launch_platform()
-    clinical = ClinicalPage(active_page)
+    nav = NavigationPage(page, BASE_URL)
+    nav.navigate_to_clinical()
+    clinical = ClinicalPage(page)
 
     if not clinical.is_manual_form_open():
         clinical.click_enter_gene_panel_manually()
-        active_page.wait_for_timeout(1000)
+        page.wait_for_timeout(1000)
 
     # 2. Enter synthetic patient values (made-up age & gene; no real patient data)
     case = PGxCaseContext(
@@ -197,11 +199,12 @@ def test_live_pgx_clinical_assessment_with_ai_judge(page: Page):
         ],
     )
 
+    clinical.click_add_demographics()
     clinical.fill_age(case.age)
     clinical.select_sex(case.sex)
     clinical.select_gene(case.gene)
     clinical.select_phenotype(case.phenotype)
-    active_page.wait_for_timeout(500)
+    page.wait_for_timeout(500)
 
     # 3. Run full PGx assessment and extract rendered UI response
     clinical.run_assessment(timeout=90000)

@@ -1103,6 +1103,7 @@ class TestRunner:
                 ],
             )
 
+            clinical.click_add_demographics()
             clinical.fill_age(case.age)
             clinical.select_sex(case.sex)
             clinical.select_gene(case.gene)
@@ -1145,6 +1146,7 @@ class TestRunner:
         username: str = None,
         password: str = None,
         api_key: str = None,
+        gemini_key: str = None,
         model: str = None,
         task_file: str = None,
         explore: bool = True,
@@ -1153,18 +1155,18 @@ class TestRunner:
     ) -> bool:
         """
         Reads plain-English task docs from task/, explores the app + Page Objects,
-        generates human-reviewable scenarios + tests/test_generated.py via LLM,
+        generates human-reviewable scenarios + tests/test_generated.py via LLM (Gemini/OpenRouter/OpenAI),
         and pauses for approval before executing pytest unless --approve or interactive confirmation is given.
         """
         start = time.time()
-        key = (api_key or LLM_API_KEY or "").strip()
+        key = (api_key or gemini_key or LLM_API_KEY or GEMINI_API_KEY or "").strip()
         if not key:
             self._record_test(
                 name="generate_tests",
                 status="SKIPPED",
                 duration_ms=0,
                 details={
-                    "reason": "OpenRouter/OpenAI API key not provided. Pass --api-key or set OPENROUTER_API_KEY / OPENAI_API_KEY."
+                    "reason": "LLM API key not provided. Pass --gemini-key / --api-key or set GEMINI_API_KEY / OPENROUTER_API_KEY."
                 },
             )
             return True
@@ -1185,7 +1187,7 @@ class TestRunner:
                 except Exception:
                     snapshots = []
 
-            generator = LLMTestGenerator(api_key=key, model=model or LLM_MODEL)
+            generator = LLMTestGenerator(api_key=key, model=model)
             result = generator.generate(
                 tasks=tasks,
                 page_object_summary=po_summary,
@@ -1369,6 +1371,7 @@ class TestRunner:
                         username=username,
                         password=password,
                         api_key=api_key,
+                        gemini_key=gemini_key,
                         model=llm_model,
                         task_file=task_file,
                         explore=explore,
