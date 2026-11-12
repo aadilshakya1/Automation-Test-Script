@@ -222,7 +222,21 @@ class LLMTestGenerator:
             "   - On `/clinical`, call `clinical_page.click_add_demographics()` before `fill_age()` or `select_sex()`.\n"
             "   - On `/education`, clicking 'Drug Monograph', 'Lectures', or 'Patient Case Simulation' stays on `/education`; do NOT call `page.go_back()` after clicking them.\n"
             "8. Check `get_floating_mode_switch_btn()` visibility safely with `btn = nav.get_floating_mode_switch_btn(); assert not (btn.count() > 0 and btn.first.is_visible())`.\n"
-            "9. Include standard pytest browser/page fixtures (`browser_context`, `page`) using `sync_playwright()` with `scope='function'` for `browser_context` and `permissions=['clipboard-read', 'clipboard-write']`.\n"
+            "9. Use this EXACT fixture pattern (NEVER pass `sync_playwright` as a fixture parameter and NEVER use `autouse=True` on login fixtures):\n"
+            "```python\n"
+            "@pytest.fixture(scope='module')\n"
+            "def browser_context():\n"
+            "    with sync_playwright() as p:\n"
+            "        browser = p.chromium.launch(headless=HEADLESS)\n"
+            "        context = browser.new_context(permissions=['clipboard-read', 'clipboard-write'])\n"
+            "        yield context\n"
+            "        browser.close()\n\n"
+            "@pytest.fixture\n"
+            "def page(browser_context):\n"
+            "    pg = browser_context.new_page()\n"
+            "    yield pg\n"
+            "    pg.close()\n"
+            "```\n"
             "10. Respond strictly with valid JSON matching:\n"
             "{\n"
             '  "scenarios": [\n'
@@ -434,6 +448,14 @@ class LLMTestGenerator:
         if "login_page.login(" in code and "is_login_page_displayed()" not in code:
             issues.append(
                 "Wrap every `login_page.login(...)` call inside `if login_page.is_login_page_displayed():`."
+            )
+        if "def browser_context(sync_playwright" in code:
+            issues.append(
+                "`sync_playwright` is not a pytest fixture! Use `def browser_context():` with `with sync_playwright() as p:` inside."
+            )
+        if "autouse=True" in code and "login" in code:
+            issues.append(
+                "Do not use `autouse=True` on an authentication fixture (public tests like `/shared_chat` should not require login)."
             )
         return issues
 
