@@ -341,18 +341,29 @@ class ClinicalPage:
             thread_title = self.page.locator(f"[title*='{name_or_gene}' i]")
             if thread_title.count() > 0:
                 parent_row = thread_title.first.locator("xpath=ancestor::div[contains(@class, 'cursor-pointer')]")
-                btn = parent_row.get_by_role("button", name="Thread options")
-                if btn.count() > 0:
-                    btn.first.click()
-                    self.page.wait_for_timeout(500)
-                    return
+                if parent_row.count() > 0:
+                    try:
+                        parent_row.first.hover()
+                        self.page.wait_for_timeout(300)
+                    except Exception:
+                        pass
+                    btn = parent_row.get_by_role("button", name="Thread options")
+                    if btn.count() > 0:
+                        btn.first.click(force=True)
+                        self.page.wait_for_timeout(500)
+                        return
 
         menu_btns = self.page.get_by_role("button", name="Thread options")
         if menu_btns.count() > index:
-            menu_btns.nth(index).click()
+            try:
+                menu_btns.nth(index).hover()
+            except Exception:
+                pass
+            menu_btns.nth(index).click(force=True)
         else:
             fallback = self.page.locator("button[aria-label='Thread options']")
-            fallback.first.click()
+            if fallback.count() > index:
+                fallback.nth(index).click(force=True)
         self.page.wait_for_timeout(500)
 
     def click_share_in_menu(self):
@@ -387,6 +398,12 @@ class ClinicalPage:
             if copy_btn.count() > 0 and copy_btn.first.is_visible():
                 copy_btn.first.click()
                 self.page.wait_for_timeout(500)
+                try:
+                    cb = self.page.evaluate("navigator.clipboard.readText()")
+                    if cb and "http" in cb:
+                        return cb
+                except Exception:
+                    pass
 
         # 2. Check for general input with URL
         link_inputs = self.page.locator("input[value*='http'], input[readonly]")
@@ -411,3 +428,84 @@ class ClinicalPage:
                 return href
 
         return self.page.url
+
+    # ----------------------------------------------------
+    # Third Task: Clinical Screen Chat, Examples & Profile
+    # ----------------------------------------------------
+
+    def get_chat_input(self):
+        """Locates the main clinical chat textarea (Rule 4: get_by_placeholder / locator)."""
+        inp = self.page.get_by_placeholder(re.compile(r"Ask a question or provide patient context", re.I))
+        if inp.count() == 0:
+            inp = self.page.locator("textarea")
+        return inp.first
+
+    def get_send_message_button(self):
+        """Locates the 'Send message' button (Rule 4: get_by_role / get_by_text)."""
+        btn = self.page.get_by_role("button", name=re.compile(r"Send message", re.I))
+        if btn.count() == 0:
+            btn = self.page.locator("button[aria-label='Send message']")
+        return btn.first
+
+    def click_suggested_prompts(self):
+        """Clicks 'Suggested Prompts' button (Rule 4: get_by_role / get_by_text)."""
+        btn = self.page.get_by_role("button", name=re.compile(r"Suggested Prompts", re.I))
+        if btn.count() == 0:
+            btn = self.page.get_by_text(re.compile(r"Suggested Prompts", re.I))
+        btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        btn.first.click()
+        self.page.wait_for_timeout(500)
+
+    def click_next_example(self):
+        """Clicks 'Next example' button in suggested prompts panel (Rule 4)."""
+        btn = self.page.get_by_role("button", name=re.compile(r"Next example", re.I))
+        if btn.count() == 0:
+            btn = self.page.locator("button[aria-label='Next example']")
+        btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        btn.first.click()
+        self.page.wait_for_timeout(400)
+
+    def click_previous_example(self):
+        """Clicks 'Previous example' button in suggested prompts panel (Rule 4)."""
+        btn = self.page.get_by_role("button", name=re.compile(r"Previous example", re.I))
+        if btn.count() == 0:
+            btn = self.page.locator("button[aria-label='Previous example']")
+        btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        btn.first.click()
+        self.page.wait_for_timeout(400)
+
+    def click_go_to_example(self, number: int):
+        """Clicks 'Go to example X' button in suggested prompts panel (Rule 4)."""
+        btn = self.page.get_by_role("button", name=re.compile(rf"Go to example {number}", re.I))
+        if btn.count() == 0:
+            btn = self.page.locator(f"button[aria-label='Go to example {number}']")
+        btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        btn.first.click()
+        self.page.wait_for_timeout(400)
+
+    def click_use_this_example(self):
+        """Clicks 'Use this example' button (Rule 4)."""
+        btn = self.page.get_by_role("button", name=re.compile(r"Use this example", re.I))
+        if btn.count() == 0:
+            btn = self.page.get_by_text(re.compile(r"Use this example", re.I))
+        btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        btn.first.click()
+        self.page.wait_for_timeout(400)
+
+    def click_close_examples(self):
+        """Clicks 'Close examples' button (Rule 4)."""
+        btn = self.page.get_by_role("button", name=re.compile(r"Close examples", re.I))
+        if btn.count() == 0:
+            btn = self.page.locator("button[aria-label='Close examples']")
+        btn.first.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        btn.first.click()
+        self.page.wait_for_timeout(400)
+
+    def open_user_profile_menu(self):
+        """Clicks user profile trigger in sidebar (Rule 4: get_by_text)."""
+        user_trigger = self.page.locator("aside, [class*='sidebar' i]").locator("div, button").filter(
+            has_text=re.compile(r"(Test User|Aadil Shakya)", re.I)
+        ).last
+        user_trigger.wait_for(state="visible", timeout=DEFAULT_TIMEOUT)
+        user_trigger.click()
+        self.page.wait_for_timeout(500)

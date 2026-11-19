@@ -24,6 +24,7 @@ htmlcov/
 artifacts/screenshots/*.png
 !artifacts/screenshots/.gitkeep
 artifacts/generated_*
+artifacts/report.html
 
 # IDEs & OS files
 .vscode/
