@@ -175,7 +175,7 @@ If a test fails:
 
 ---
 
-## 👨‍💻 Running Tests for Humans
+## 👨‍💻 Running Tests Manually
 
 ### Run with Terminal Summary
 ```powershell
