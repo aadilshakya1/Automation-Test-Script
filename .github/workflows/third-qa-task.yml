@@ -1,0 +1,81 @@
+name: "Third QA Task (Clinical Chat, Prompts & Profile)"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      subtask:
+        description: "Select sub-task to execute"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - "all"
+          - "task1_send_button"
+          - "task2_enter_vs_shift_enter"
+          - "task3_example_prompts"
+          - "task4_profile_menu"
+
+jobs:
+  third-qa-task:
+    name: "Run Third QA Task (Clinical Screen)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PGX_URL: "https://pgx-dev.datum.bio/"
+      PGX_USERNAME: ${{ secrets.PGX_USERNAME }}
+      PGX_PASSWORD: ${{ secrets.PGX_PASSWORD }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      HEADLESS: "true"
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python 3.12"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: "Install Python dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: "Install Playwright Chromium & OS Dependencies"
+        run: |
+          playwright install --with-deps chromium
+
+      - name: "Execute Third QA Task"
+        run: |
+          SUBTASK="${{ github.event.inputs.subtask || 'all' }}"
+          echo "Running Third QA Task subtask: $SUBTASK"
+
+          if [ "$SUBTASK" = "all" ]; then
+            python run_task3.py --task all
+          elif [ "$SUBTASK" = "task1_send_button" ]; then
+            python run_task3.py --task 1
+          elif [ "$SUBTASK" = "task2_enter_vs_shift_enter" ]; then
+            python run_task3.py --task 2
+          elif [ "$SUBTASK" = "task3_example_prompts" ]; then
+            python run_task3.py --task 3
+          elif [ "$SUBTASK" = "task4_profile_menu" ]; then
+            python run_task3.py --task 4
+          fi
+
+      - name: "Upload Third QA Task Artifacts"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: third-qa-task-artifacts
+          path: |
+            artifacts/report.html
+            artifacts/screenshots/
+          retention-days: 14
+          if-no-files-found: ignore

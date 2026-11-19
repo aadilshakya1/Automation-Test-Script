@@ -1,0 +1,76 @@
+name: "First QA Task (Mode Switch & Thread Sidebar)"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      subtask:
+        description: "Select sub-task to execute"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - "all"
+          - "task1_a_mode_switch"
+          - "task1_b_data_retention"
+          - "task2_thread_sidebar"
+
+jobs:
+  first-qa-task:
+    name: "Run First QA Task"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PGX_URL: "https://pgx-dev.datum.bio/"
+      PGX_USERNAME: ${{ secrets.PGX_USERNAME }}
+      PGX_PASSWORD: ${{ secrets.PGX_PASSWORD }}
+      HEADLESS: "true"
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python 3.12"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: "Install Python dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: "Install Playwright Chromium & OS Dependencies"
+        run: |
+          playwright install --with-deps chromium
+
+      - name: "Execute First QA Task"
+        run: |
+          SUBTASK="${{ github.event.inputs.subtask || 'all' }}"
+          echo "Running First QA Task subtask: $SUBTASK"
+
+          if [ "$SUBTASK" = "all" ]; then
+            pytest tests/test_task1.py tests/test_task2.py --html=artifacts/first-qa-task-report.html --self-contained-html -v -s
+          elif [ "$SUBTASK" = "task1_a_mode_switch" ]; then
+            python runner.py --scenario task1_a
+          elif [ "$SUBTASK" = "task1_b_data_retention" ]; then
+            python runner.py --scenario task1_b
+          elif [ "$SUBTASK" = "task2_thread_sidebar" ]; then
+            python runner.py --scenario task2
+          fi
+
+      - name: "Upload First QA Task Artifacts"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: first-qa-task-artifacts
+          path: |
+            artifacts/first-qa-task-report.html
+            artifacts/screenshots/
+          retention-days: 14
+          if-no-files-found: ignore

@@ -64,7 +64,8 @@ def test_task1_part_a_switching_modes(page: Page):
     # 1. Log in and open /clinical
     login_page = LoginPage(page, BASE_URL)
     login_page.navigate()
-    login_page.login(TEST_USERNAME, TEST_PASSWORD)
+    if login_page.is_login_page_displayed():
+        login_page.login(TEST_USERNAME, TEST_PASSWORD)
     page.wait_for_load_state("networkidle", timeout=30000)
 
     # Launch platform (handles modal dismissal and navigates to /clinical)
@@ -159,7 +160,8 @@ def test_task1_part_b_data_persistence(page: Page):
     # 1. Log in and open /clinical
     login_page = LoginPage(page, BASE_URL)
     login_page.navigate()
-    login_page.login(TEST_USERNAME, TEST_PASSWORD)
+    if login_page.is_login_page_displayed():
+        login_page.login(TEST_USERNAME, TEST_PASSWORD)
     page.wait_for_load_state("networkidle", timeout=30000)
 
     active_page = login_page.launch_platform()

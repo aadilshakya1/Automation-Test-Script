@@ -1,0 +1,85 @@
+name: "Second QA Task (Pages and Navigation)"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+    inputs:
+      subtask:
+        description: "Select navigation task to execute"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - "all"
+          - "nav_task1_landing_buttons"
+          - "nav_task2_phone_view"
+          - "nav_task3_education_cards"
+          - "nav_task4_floating_mode_switch"
+          - "nav_task5_learn_more"
+          - "nav_task6_broken_share_links"
+
+jobs:
+  second-qa-task:
+    name: "Run Second QA Task (Pages & Navigation)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PGX_URL: "https://pgx-dev.datum.bio/"
+      PGX_USERNAME: ${{ secrets.PGX_USERNAME }}
+      PGX_PASSWORD: ${{ secrets.PGX_PASSWORD }}
+      HEADLESS: "true"
+
+    steps:
+      - name: "Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "Set up Python 3.12"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: "Install Python dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: "Install Playwright Chromium & OS Dependencies"
+        run: |
+          playwright install --with-deps chromium
+
+      - name: "Execute Second QA Task"
+        run: |
+          SUBTASK="${{ github.event.inputs.subtask || 'all' }}"
+          echo "Running Second QA Task subtask: $SUBTASK"
+
+          if [ "$SUBTASK" = "all" ]; then
+            pytest tests/test_pages_and_navigation.py --html=artifacts/second-qa-task-report.html --self-contained-html -v -s
+          elif [ "$SUBTASK" = "nav_task1_landing_buttons" ]; then
+            python runner.py --scenario nav_task1
+          elif [ "$SUBTASK" = "nav_task2_phone_view" ]; then
+            python runner.py --scenario nav_task2
+          elif [ "$SUBTASK" = "nav_task3_education_cards" ]; then
+            python runner.py --scenario nav_task3
+          elif [ "$SUBTASK" = "nav_task4_floating_mode_switch" ]; then
+            python runner.py --scenario nav_task4
+          elif [ "$SUBTASK" = "nav_task5_learn_more" ]; then
+            python runner.py --scenario nav_task5
+          elif [ "$SUBTASK" = "nav_task6_broken_share_links" ]; then
+            python runner.py --scenario nav_task6
+          fi
+
+      - name: "Upload Second QA Task Artifacts"
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: second-qa-task-artifacts
+          path: |
+            artifacts/second-qa-task-report.html
+            artifacts/screenshots/
+          retention-days: 14
+          if-no-files-found: ignore
