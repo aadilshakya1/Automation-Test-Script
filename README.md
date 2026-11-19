@@ -1,12 +1,12 @@
-# Playwright Automated Testing Suite for PGX Dev (Datum Bio)
+# Playwright Automated Testing Suite
 
-An automated testing framework tailored for **https://pgx-dev.datum.bio/**, designed to be executed seamlessly by both **human software engineers** and **autonomous AI agents**.
+An automated testing framework designed to be executed seamlessly by both **human software engineers** and **autonomous AI agents**.
 
 ---
 
 ## 📋 Core Rules (Strictly Enforced)
 
-1. **Dev Account**: Tests execute against the live development environment (`https://pgx-dev.datum.bio/clinical`).
+1. **Dev Account**: Tests execute against the live development environment
 2. **Never Use Real Patient Data**: Strictly use synthetic/mock user sessions.
 3. **Made-Up Clinical Values**: Use made-up ages, synthetic genes (e.g. `CYP2C19`, `CYP2D6`), conditions, and medications.
 4. **Accessible Locators Only**: Interactive buttons and controls are located strictly using `page.get_by_role()` and `page.get_by_text()`, never CSS classes.
